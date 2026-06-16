@@ -1,0 +1,16 @@
+# Ambientes Virtuais
+.venv/
+venv/
+env/
+
+# Arquivos compilados do Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDEs (Cursor, VS Code)
+.vscode/
+.idea/
+
+# banco de dados
+*.db
