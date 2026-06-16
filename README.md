@@ -8,7 +8,7 @@ O Reliquary resolve o problema do vazamento constante de senhas, chaves de API e
 
 ## 🏗️ Arquitetura e Decisões de Design
 
-O projeto foi construído respeitando rigorosamente o modelo de Separação de Responsabilidades (MVC), isolando as interfaces (GUI/CLI) das operações criptográficas e do banco de dados.
+O projeto foi construído focando na separação de responsabilidades, isolando as interfaces (GUI/CLI) das operações criptográficas e do banco de dados.
 
 ```text
 reliquary/
