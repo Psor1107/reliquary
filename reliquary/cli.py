@@ -25,6 +25,7 @@ from reliquary.vault import (
     VaultError,
     VaultNotInitializedError,
 )
+from reliquary.database import SQLiteStorage
 
 
 # Session cache configuration
@@ -87,8 +88,12 @@ def _write_session(password: str, ttl: int = SESSION_TTL) -> None:
 
 
 def unlock_vault(master_password: str, db_path: Path | None = None) -> Vault:
-    """Unlock the vault without mutating stored secrets."""
-    vault = Vault(db_path=db_path) if db_path else Vault()
+    """Unlock the vault without mutating stored secrets.
+
+    This constructs a SQLiteStorage and injects it into Vault.
+    """
+    storage = SQLiteStorage(db_path=db_path) if db_path else SQLiteStorage()
+    vault = Vault(storage=storage)
 
     if not vault.is_initialized():
         raise VaultNotInitializedError("Vault has not been created yet.")
