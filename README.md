@@ -2,20 +2,23 @@
 
 Um Registry de Segredos local e remoto focado em **Segurança (Safe)** e **Developer Experience (Smooth)**. 
 
-O Reliquary resolve o problema do vazamento constante de senhas, chaves de API e tokens em arquivos `.env` ou históricos de shell. Ele unifica o armazenamento criptografado em repouso num único cofre (SQLite) e permite que essas credenciais sejam consumidas dinamicamente sob demanda por ferramentas de automação, sem deixá-las espalhadas em texto plano no disco.
+O Reliquary resolve o problema do vazamento constante de senhas, chaves de API e tokens em arquivos `.env` ou históricos de shell. Ele unifica o armazenamento criptografado em repouso num único cofre local (SQLite) e permite que essas credenciais sejam consumidas dinamicamente sob demanda por ferramentas de automação (como `uv`, `npm` ou `Ansible`), sem deixá-las expostas em texto plano no disco.
 
 ---
 
 ## 🏗️ Arquitetura e Decisões de Design
 
-O projeto foi construído focando na separação de responsabilidades, isolando as interfaces (GUI/CLI) das operações criptográficas e do banco de dados.
+O projeto foi construído respeitando a separação de responsabilidades e o Princípio de Responsabilidade Única (SRP), isolando completamente as interfaces, a validação de configurações, o motor criptográfico e o gerenciamento de processos do Sistema Operacional.
 
 ```text
 reliquary/
-├── app.py          # View: Interface Gráfica rica (CustomTkinter)
+├── app.py          # View: Interface Gráfica desktop rica (CustomTkinter)
 ├── vault.py        # Controller: Orquestração de negócio e controle de sessão em RAM
 ├── crypto.py       # Lógica: Implementação estrita de KDF (Argon2id) e AEAD (Fernet/AES)
-└── database.py     # Model: Camada de persistência (SQLite CRUD puro)
+├── database.py     # Model: Camada de persistência e CRUD (SQLite puro)
+├── contract.py     # Manifesto: Parsing e validação estrita de contratos YAML
+├── launcher.py     # Executor: Isolamento de memória e spawn de subprocessos (Wrapper)
+└── cli.py          # Maestro: Ponto de entrada oficial e orquestração do CLI
 
 ```
 
@@ -53,9 +56,9 @@ pip install -r requirements.txt
 
 ```
 
-### Interface de Gestão (GUI)
+### Interface de Gestão (GUI Desktop)
 
-Para a gestão diária (criar o cofre, adicionar caminhos e visualizar segredos), o Reliquary possui uma interface Desktop fluida que não bloqueia o cursor durante o processamento criptográfico:
+Para a gestão diária (criar o cofre, adicionar caminhos e visualizar segredos), o Reliquary possui uma interface Desktop fluida que roda de forma assíncrona para não travar a UI durante o processamento pesado do Argon2id:
 
 ```bash
 python -m reliquary
@@ -68,17 +71,30 @@ python -m reliquary
 
 ## 🔌 Consumo e Integrações (O Motor)
 
-O objetivo central do Reliquary é ser consumido por ferramentas externas (npm, uv, Ansible). A arquitetura permite que scripts de linha de comando extraiam os segredos dinamicamente injetando a Master Password, sem depender da interface gráfica.
+O grande diferencial do Reliquary está na sua capacidade de atuar como um **Wrapper/Injetor de Ambientes**. Em vez de salvar chaves secretas em arquivos `.env` locais (vulneráveis a vazamentos), as ferramentas externas consomem os dados diretamente da memória RAM através de um contrato de manifesto YAML.
 
-**Exemplo de consumo bruto via CLI (Prova de Conceito):**
+O `launcher.py` do Reliquary cria uma bolha invisível e isolada de variáveis de ambiente no Sistema Operacional, executa o comando alvo (como scripts em Node, Python, etc.) e descarta as chaves da memória assim que o processo termina.
+
+**Exemplo de consumo automatizado via CLI:**
 
 ```bash
-# Uso: python client/consumidor_cli.py <MASTER_PASSWORD> <PATH_DO_SEGREDO>
-python client/consumidor_cli.py minha_senha_mestra dev/aws_key
+# Execução padrão (Usa o secrets.yml da pasta atual ou da /client)
+python -m reliquary.cli --password minha_senha_mestra -- python client/app_alvo.py
 
 ```
 
-*(O output deste script é estritamente o texto plano do segredo, permitindo ser capturado via `stdout` para injeção de variáveis de ambiente no Linux/Windows).*
+### Parâmetros Avançados de Linha de Comando:
+
+O injetor é totalmente flexível e aceita caminhos customizados para se adaptar a diferentes esteiras de CI/CD ou estruturas de repositório:
+
+```bash
+# Especificando um manifesto YAML customizado
+python -m reliquary.cli --password "..." --secrets-file ./outro/secrets.yml -- python client/app_alvo.py
+
+# Especificando um arquivo de banco de dados específico
+python -m reliquary.cli --password "..." --db-path ./custom_registry.db -- python client/app_alvo.py
+
+```
 
 ---
 
