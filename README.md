@@ -78,7 +78,12 @@ O `launcher.py` do Reliquary cria uma bolha invisível e isolada de variáveis d
 **Exemplo de consumo automatizado via CLI:**
 
 ```bash
-# Execução padrão (Usa o secrets.yml da pasta atual ou da /client)
+# Execução padrão (Usa o secrets.yml da pasta atual ou da /client).
+# A senha mestra é opcional na linha de comando — o CLI vai pedir com input invisível
+# se omitida e armazenará em cache por 15 minutos.
+python -m reliquary.cli -- python client/app_alvo.py
+
+# (Opcional, desencorajado) Fornecer a senha inline — pode vazar no histórico do shell:
 python -m reliquary.cli --password minha_senha_mestra -- python client/app_alvo.py
 
 ```
