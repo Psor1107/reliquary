@@ -4,6 +4,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from reliquary.vault import Vault, VaultError
+from reliquary.database import SQLiteStorage
 
 def main():
     if len(sys.argv) != 3:
@@ -13,7 +14,8 @@ def main():
     senha_mestra = sys.argv[1]
     caminho_segredo = sys.argv[2]
 
-    cofre = Vault()
+    storage = SQLiteStorage()
+    cofre = Vault(storage=storage)
 
     try:
         cofre.unlock(senha_mestra)

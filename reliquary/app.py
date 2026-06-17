@@ -17,6 +17,7 @@ from reliquary.vault import (
     VaultError,
     VaultLockedError,
 )
+from reliquary.database import SQLiteStorage
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("green")
@@ -29,7 +30,8 @@ class ReliquaryApp(ctk.CTk):
         self.geometry("960x600")
         self.minsize(800, 500)
 
-        self.vault = Vault()
+        storage = SQLiteStorage()
+        self.vault = Vault(storage=storage)
         self._selected_path: str | None = None
         self._busy = False
 

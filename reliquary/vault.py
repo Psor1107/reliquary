@@ -5,7 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from reliquary import crypto, database
+from reliquary import crypto
+from reliquary.storage import StorageBackend
 
 
 class VaultError(Exception):
@@ -34,15 +35,15 @@ class SecretNotFoundError(VaultError):
 
 @dataclass
 class Vault:
-    db_path: Path = field(default_factory=lambda: database.DEFAULT_DB_PATH)
+    storage: StorageBackend
     _key: bytes | None = field(default=None, repr=False)
 
     def initialize(self) -> None:
-        database.init_db(self.db_path)
+        self.storage.initialize()
 
     def is_initialized(self) -> bool:
         self.initialize()
-        return database.vault_exists(self.db_path)
+        return self.storage.vault_exists()
 
     def is_unlocked(self) -> bool:
         return self._key is not None
@@ -52,14 +53,14 @@ class Vault:
             raise VaultError("Master password cannot be empty.")
 
         self.initialize()
-        if database.vault_exists(self.db_path):
+        if self.storage.vault_exists():
             raise VaultError("Vault already exists.")
 
         salt = crypto.generate_salt()
         key = crypto.derive_key(master_password, salt)
         verifier = crypto.create_verifier(key)
 
-        database.insert_vault_meta(salt, verifier, self.db_path)
+        self.storage.insert_vault_meta(salt, verifier)
         self._key = key
 
     def unlock(self, master_password: str) -> None:
@@ -67,10 +68,10 @@ class Vault:
             raise VaultError("Master password cannot be empty.")
 
         self.initialize()
-        if not database.vault_exists(self.db_path):
+        if not self.storage.vault_exists():
             raise VaultNotInitializedError("Vault has not been created yet.")
 
-        salt, verifier = database.get_vault_meta(self.db_path)
+        salt, verifier = self.storage.get_vault_meta()
         key = crypto.derive_key(master_password, salt)
 
         if not crypto.verify_key(key, verifier):
@@ -89,7 +90,7 @@ class Vault:
 
     def list_paths(self) -> list[str]:
         self._require_key()
-        return database.get_all_paths(self.db_path)
+        return self.storage.get_all_paths()
 
     def add_secret(self, path: str, plaintext: str) -> None:
         path = path.strip()
@@ -97,30 +98,30 @@ class Vault:
             raise VaultError("Secret path cannot be empty.")
 
         key = self._require_key()
-        if database.get_secret_by_path(path, self.db_path) is not None:
+        if self.storage.get_secret_by_path(path) is not None:
             raise SecretAlreadyExistsError(f"Secret already exists: {path}")
 
         ciphertext = crypto.encrypt(key, plaintext)
-        database.insert_secret(path, ciphertext, self.db_path)
+        self.storage.insert_secret(path, ciphertext)
 
     def get_secret(self, path: str) -> str:
         key = self._require_key()
-        ciphertext = database.get_secret_by_path(path, self.db_path)
+        ciphertext = self.storage.get_secret_by_path(path)
         if ciphertext is None:
             raise SecretNotFoundError(f"Secret not found: {path}")
         return crypto.decrypt(key, ciphertext)
 
     def update_secret(self, path: str, plaintext: str) -> None:
         key = self._require_key()
-        if database.get_secret_by_path(path, self.db_path) is None:
+        if self.storage.get_secret_by_path(path) is None:
             raise SecretNotFoundError(f"Secret not found: {path}")
 
         ciphertext = crypto.encrypt(key, plaintext)
-        database.update_secret(path, ciphertext, self.db_path)
+        self.storage.update_secret(path, ciphertext)
 
     def delete_secret(self, path: str) -> None:
         self._require_key()
         try:
-            database.delete_secret(path, self.db_path)
+            self.storage.delete_secret(path)
         except LookupError as exc:
             raise SecretNotFoundError(str(exc)) from exc
