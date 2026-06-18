@@ -18,6 +18,7 @@ from reliquary.contract import (
     resolve_secrets_file,
 )
 from reliquary.launcher import LauncherError, build_merged_environ, run_target_command
+from reliquary.remote import RemoteAPIStorage
 from reliquary.vault import (
     InvalidMasterPasswordError,
     SecretNotFoundError,
@@ -87,12 +88,16 @@ def _write_session(password: str, ttl: int = SESSION_TTL) -> None:
             pass
 
 
-def unlock_vault(master_password: str, db_path: Path | None = None) -> Vault:
+def unlock_vault(master_password: str, db_path: Path | None = None, remote_url: str | None = None) -> Vault:
     """Unlock the vault without mutating stored secrets.
 
-    This constructs a SQLiteStorage and injects it into Vault.
+    This constructs either a remote or local storage backend and injects it into Vault.
     """
-    storage = SQLiteStorage(db_path=db_path) if db_path else SQLiteStorage()
+    if remote_url:
+        storage = RemoteAPIStorage(base_url=remote_url)
+    else:
+        storage = SQLiteStorage(db_path=db_path) if db_path else SQLiteStorage()
+
     vault = Vault(storage=storage)
 
     if not vault.is_initialized():
@@ -148,6 +153,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Optional path to registry.db (defaults to the project registry.db).",
     )
     parser.add_argument(
+        "--remote-url",
+        type=str,
+        default=None,
+        help="Optional remote Reliquary server URL, e.g. http://localhost:8000.",
+    )
+    parser.add_argument(
         "command",
         nargs=argparse.REMAINDER,
         help="Target command after '--', e.g. -- python client/app_alvo.py",
@@ -181,7 +192,7 @@ def main(argv: list[str] | None = None) -> int:
                 print("Error: failed reading master password.", file=sys.stderr)
                 return 1
 
-        vault = unlock_vault(password, args.db_path)
+        vault = unlock_vault(password, args.db_path, args.remote_url)
 
         # On successful unlock, cache the password for a short TTL for DX
         try:
