@@ -20,7 +20,13 @@ class RemoteAPIStorage(StorageBackend):
     def __init__(self, base_url: str) -> None:
         self.base_url = base_url.rstrip("/")
 
-    def _request(self, path: str, method: str = "GET", data: dict[str, Any] | None = None) -> Any:
+    def _request(
+        self,
+        path: str,
+        method: str = "GET",
+        data: dict[str, Any] | None = None,
+        allow_not_found: bool = False,
+    ) -> Any:
         url = urljoin(self.base_url + "/", path.lstrip("/"))
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         body = None
@@ -37,6 +43,8 @@ class RemoteAPIStorage(StorageBackend):
                     return None
                 return json.loads(raw.decode("utf-8"))
         except HTTPError as exc:
+            if exc.code == 404 and allow_not_found:
+                return None
             if exc.code == 404:
                 raise LookupError("Remote resource not found.") from exc
             if exc.code == 400:
@@ -92,7 +100,11 @@ class RemoteAPIStorage(StorageBackend):
         self._request(f"/storage/secret/{quote(path, safe='')}", method="DELETE")
 
     def get_secret_by_path(self, path: str) -> bytes | None:
-        result = self._request(f"/storage/secret/{quote(path, safe='')}", method="GET")
+        result = self._request(
+            f"/storage/secret/{quote(path, safe='')}",
+            method="GET",
+            allow_not_found=True,
+        )
         if result is None:
             return None
         ciphertext = result.get("ciphertext")

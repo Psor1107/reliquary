@@ -143,7 +143,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help=(
             f"Path to the YAML contract (default: {DEFAULT_SECRETS_FILENAME} "
-            "in cwd or client/)."
+            "in cwd or examples/)."
         ),
     )
     parser.add_argument(
@@ -161,7 +161,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "command",
         nargs=argparse.REMAINDER,
-        help="Target command after '--', e.g. -- python client/app_alvo.py",
+        help="Target command after '--', e.g. -- python examples/app_alvo.py",
     )
     return parser.parse_args(argv)
 

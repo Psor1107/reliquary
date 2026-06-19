@@ -15,7 +15,7 @@ class SecretsContractError(Exception):
 
 
 def resolve_secrets_file(explicit_path: Path | None = None) -> Path:
-    """Locate secrets.yml in the working directory or in client/."""
+    """Locate secrets.yml in the working directory or in examples/."""
     if explicit_path is not None:
         return explicit_path
 
@@ -24,7 +24,7 @@ def resolve_secrets_file(explicit_path: Path | None = None) -> Path:
         return cwd_candidate
 
     package_dir = Path(__file__).resolve().parent
-    client_candidate = package_dir.parent / "client" / DEFAULT_SECRETS_FILENAME
+    client_candidate = package_dir.parent / "examples" / DEFAULT_SECRETS_FILENAME
     if client_candidate.is_file():
         return client_candidate
 

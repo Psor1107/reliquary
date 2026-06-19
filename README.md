@@ -80,7 +80,10 @@ uvicorn server:app --port 8000
 **2. Consumindo via Cliente Remoto:**
 
 ```bash
-python -m reliquary.cli --remote-url http://localhost:8000 -- python client/app_alvo.py
+python -m reliquary.cli --remote-url http://localhost:8000 -- python examples/app_alvo.py
+
+# Testes de CRUD
+python -m examples.test_remote
 
 ```
 
@@ -93,10 +96,10 @@ O `launcher.py` atua como um **Wrapper de Ambientes**, consumindo o contrato `se
 ```bash
 # Execução padrão (Usa o secrets.yml local)
 # A senha mestra usa input invisível e cache de sessão seguro por 15 minutos.
-python -m reliquary.cli -- python client/app_alvo.py
+python -m reliquary.cli -- python examples/app_alvo.py
 
 # Especificando um manifesto YAML customizado e um banco específico
-python -m reliquary.cli --secrets-file ./outro/secrets.yml --db-path ./custom_registry.db -- python client/app_alvo.py
+python -m reliquary.cli --secrets-file ./outro/secrets.yml --db-path ./custom_registry.db -- python examples/app_alvo.py
 
 ```
 
