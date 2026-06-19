@@ -2,34 +2,36 @@
 
 Um Registry de Segredos local e remoto focado em **Segurança (Safe)** e **Developer Experience (Smooth)**. 
 
-O Reliquary resolve o problema do vazamento constante de senhas, chaves de API e tokens em arquivos `.env` ou históricos de shell. Ele unifica o armazenamento criptografado em repouso num único cofre local (SQLite) e permite que essas credenciais sejam consumidas dinamicamente sob demanda por ferramentas de automação (como `uv`, `npm` ou `Ansible`), sem deixá-las expostas em texto plano no disco.
+O Reliquary resolve o problema do vazamento constante de senhas, chaves de API e tokens em arquivos `.env` ou históricos de shell. Ele unifica o armazenamento criptografado em repouso num único cofre (SQLite) e permite que essas credenciais sejam consumidas dinamicamente sob demanda por ferramentas de automação (como `uv`, `npm` ou `Ansible`), sem deixá-las expostas em texto plano no disco.
 
 ---
 
 ## 🏗️ Arquitetura e Decisões de Design
 
-O projeto foi construído respeitando a separação de responsabilidades e o Princípio de Responsabilidade Única (SRP), isolando completamente as interfaces, a validação de configurações, o motor criptográfico e o gerenciamento de processos do Sistema Operacional.
+O projeto foi construído respeitando a separação de responsabilidades e o Princípio de Inversão de Dependências (SOLID), isolando completamente as interfaces, o motor criptográfico e o armazenamento. O banco de dados opera sob uma interface via `Protocol`, permitindo plugar repositórios locais ou remotos sem alterar o núcleo de segurança.
 
 ```text
 reliquary/
 ├── app.py          # View: Interface Gráfica desktop rica (CustomTkinter)
 ├── vault.py        # Controller: Orquestração de negócio e controle de sessão em RAM
 ├── crypto.py       # Lógica: Implementação estrita de KDF (Argon2id) e AEAD (Fernet/AES)
-├── database.py     # Model: Camada de persistência e CRUD (SQLite puro)
+├── database.py     # Local Storage: Camada de persistência (SQLite puro)
+├── remote.py       # Remote Storage: Cliente HTTP para consumo de API externa
+├── storage.py      # Interface: Contrato de armazenamento (Dependency Inversion)
 ├── contract.py     # Manifesto: Parsing e validação estrita de contratos YAML
-├── launcher.py     # Executor: Isolamento de memória e spawn de subprocessos (Wrapper)
+├── launcher.py     # Executor: Isolamento de memória e spawn de subprocessos
 └── cli.py          # Maestro: Ponto de entrada oficial e orquestração do CLI
+server.py           # Entrypoint: API FastAPI para o modo distribuído
 
 ```
 
-### O Modelo de Ameaças (Segurança)
+### O Modelo de Ameaças (Segurança e Zero-Knowledge)
 
-Para garantir a máxima proteção local (contra cópia não autorizada do banco de dados ou despejos simples de memória):
+Para garantir a máxima proteção local e remota:
 
-1. **Derivação de Chave Resistente a Hardware:** A Master Password do usuário NUNCA é armazenada. O sistema utiliza **Argon2id** (`argon2-cffi`) combinado com um *Salt* único de 16 bytes. Este algoritmo foi calibrado (exigindo ~64MB de RAM) para atrasar severamente ataques de força bruta utilizando GPUs.
-2. **Criptografia Autenticada (AEAD):** Os segredos são encriptados utilizando o padrão **Fernet** (AES-128-CBC acoplado a um HMAC-SHA256), garantindo tanto a confidencialidade quanto a integridade do texto cifrado.
-3. **Validação Rápida via Verifier:** Para verificar se a senha digitada está correta sem a necessidade de expor ou descriptografar todo o banco de dados, utilizamos um `verifier` em HMAC.
-4. **Sessão em Memória:** A chave derivada existe apenas na memória RAM enquanto a sessão está ativa (Unlocked) e é destruída instantaneamente no comando de bloqueio (Lock).
+1. **Derivação de Chave Resistente a Hardware:** A Master Password do usuário NUNCA é armazenada. Utilizamos **Argon2id** (`argon2-cffi`) combinado com um *Salt* único de 16 bytes.
+2. **Criptografia Autenticada (AEAD):** Padrão **Fernet** (AES-128-CBC acoplado a um HMAC-SHA256).
+3. **Criptografia Ponta-a-Ponta (E2EE):** No modo Servidor Remoto, a API atua como *Zero-Knowledge*. O servidor armazena e trafega apenas o *ciphertext* em Base64. A chave de sessão e o texto plano nunca saem da memória RAM do cliente executando o CLI.
 
 ---
 
@@ -45,11 +47,7 @@ cd visio
 
 # 2. Crie e ative um ambiente virtual isolado
 python -m venv .venv
-
-# No Windows:
-.venv\Scripts\activate
-# No Linux / macOS:
-source .venv/bin/activate
+source .venv/bin/activate  # No Windows: .venv\Scripts\activate
 
 # 3. Instale as dependências
 pip install -r requirements.txt
@@ -58,46 +56,50 @@ pip install -r requirements.txt
 
 ### Interface de Gestão (GUI Desktop)
 
-Para a gestão diária (criar o cofre, adicionar caminhos e visualizar segredos), o Reliquary possui uma interface Desktop fluida que roda de forma assíncrona para não travar a UI durante o processamento pesado do Argon2id:
+Para a gestão diária local:
 
 ```bash
 python -m reliquary
 
 ```
 
-*O arquivo `registry.db` será criado automaticamente na raiz do projeto na primeira execução.*
-
 ---
 
-## 🔌 Consumo e Integrações (O Motor)
+## 🌐 Modo Servidor (Distribuído)
 
-O grande diferencial do Reliquary está na sua capacidade de atuar como um **Wrapper/Injetor de Ambientes**. Em vez de salvar chaves secretas em arquivos `.env` locais (vulneráveis a vazamentos), as ferramentas externas consomem os dados diretamente da memória RAM através de um contrato de manifesto YAML.
+O Reliquary pode operar em rede para o compartilhamento seguro de segredos entre uma equipe.
 
-O `launcher.py` do Reliquary cria uma bolha invisível e isolada de variáveis de ambiente no Sistema Operacional, executa o comando alvo (como scripts em Node, Python, etc.) e descarta as chaves da memória assim que o processo termina.
-
-**Exemplo de consumo automatizado via CLI:**
+**1. Subindo a API (Servidor):**
 
 ```bash
-# Execução padrão (Usa o secrets.yml da pasta atual ou da /client).
-# A senha mestra é opcional na linha de comando — o CLI vai pedir com input invisível
-# se omitida e armazenará em cache por 15 minutos.
-python -m reliquary.cli -- python client/app_alvo.py
-
-# (Opcional, desencorajado) Fornecer a senha inline — pode vazar no histórico do shell:
-python -m reliquary.cli --password minha_senha_mestra -- python client/app_alvo.py
+# Inicia o servidor FastAPI na porta 8000
+uvicorn server:app --port 8000
 
 ```
 
-### Parâmetros Avançados de Linha de Comando:
-
-O injetor é totalmente flexível e aceita caminhos customizados para se adaptar a diferentes esteiras de CI/CD ou estruturas de repositório:
+**2. Consumindo via Cliente Remoto:**
 
 ```bash
-# Especificando um manifesto YAML customizado
-python -m reliquary.cli --password "..." --secrets-file ./outro/secrets.yml -- python client/app_alvo.py
+python -m reliquary.cli --remote-url http://localhost:8000 -- python examples/app_alvo.py
 
-# Especificando um arquivo de banco de dados específico
-python -m reliquary.cli --password "..." --db-path ./custom_registry.db -- python client/app_alvo.py
+# Testes de CRUD
+python -m examples.test_remote
+
+```
+
+---
+
+## 🔌 Consumo Local e Integrações (Injetor)
+
+O `launcher.py` atua como um **Wrapper de Ambientes**, consumindo o contrato `secrets.yml` e injetando as variáveis estritamente na memória do processo filho.
+
+```bash
+# Execução padrão (Usa o secrets.yml local)
+# A senha mestra usa input invisível e cache de sessão seguro por 15 minutos.
+python -m reliquary.cli -- python examples/app_alvo.py
+
+# Especificando um manifesto YAML customizado e um banco específico
+python -m reliquary.cli --secrets-file ./outro/secrets.yml --db-path ./custom_registry.db -- python examples/app_alvo.py
 
 ```
 
