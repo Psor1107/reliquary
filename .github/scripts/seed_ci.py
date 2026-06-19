@@ -18,7 +18,7 @@ def main() -> None:
 
     print(f"Criando cofre efêmero para CI/CD em {db_path}...")
     
-    storage = SQLiteStorage(db_path=str(db_path))
+    storage = SQLiteStorage(db_path=db_path)
     vault = Vault(storage=storage)
     
     # Cria o cofre com a senha fixa da esteira
