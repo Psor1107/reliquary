@@ -22,7 +22,6 @@ reliquary/
 ├── launcher.py     # Executor: Isolamento de memória e spawn de subprocessos
 └── cli.py          # Maestro: Ponto de entrada oficial e orquestração do CLI
 server.py           # Entrypoint: API FastAPI para o modo distribuído
-
 ```
 
 ### O Modelo de Ameaças (Segurança e Zero-Knowledge)
@@ -31,7 +30,7 @@ Para garantir a máxima proteção local e remota:
 
 1. **Derivação de Chave Resistente a Hardware:** A Master Password do usuário NUNCA é armazenada. Utilizamos **Argon2id** (`argon2-cffi`) combinado com um *Salt* único de 16 bytes.
 2. **Criptografia Autenticada (AEAD):** Padrão **Fernet** (AES-128-CBC acoplado a um HMAC-SHA256).
-3. **Criptografia Ponta-a-Ponta (E2EE):** No modo Servidor Remoto, a API atua como *Zero-Knowledge*. O servidor armazena e trafega apenas o *ciphertext* em Base64. A chave de sessão e o texto plano nunca saem da memória RAM do cliente executando o CLI.
+3. **Criptografia Ponta-a-Ponta (E2EE):** No modo Servidor Remoto, a API atua como *Zero-Knowledge*. O servidor armazena e trafega apenas o *ciphertext* em Base64. A chave de sessão e o texto plano nunca saem da memória RAM do cliente.
 
 ---
 
@@ -51,7 +50,6 @@ source .venv/bin/activate  # No Windows: .venv\Scripts\activate
 
 # 3. Instale as dependências
 pip install -r requirements.txt
-
 ```
 
 ### Interface de Gestão (GUI Desktop)
@@ -60,7 +58,6 @@ Para a gestão diária local:
 
 ```bash
 python -m reliquary
-
 ```
 
 ---
@@ -74,7 +71,6 @@ O Reliquary pode operar em rede para o compartilhamento seguro de segredos entre
 ```bash
 # Inicia o servidor FastAPI na porta 8000
 uvicorn server:app --port 8000
-
 ```
 
 **2. Consumindo via Cliente Remoto:**
@@ -82,25 +78,29 @@ uvicorn server:app --port 8000
 ```bash
 python -m reliquary.cli --remote-url http://localhost:8000 -- python examples/app_alvo.py
 
-# Testes de CRUD
+# Bateria completa de testes automatizados E2E contra a API remota
 python -m examples.test_remote
-
 ```
 
 ---
 
-## 🔌 Consumo Local e Integrações (Injetor)
+## 🔌 Consumidores e Integrações (Injetor Agnóstico)
 
-O `launcher.py` atua como um **Wrapper de Ambientes**, consumindo o contrato `secrets.yml` e injetando as variáveis estritamente na memória do processo filho.
+O `launcher.py` é agnóstico à linguagem do processo filho. Ele envolve qualquer ferramenta de automação com uma bolha isolada de variáveis, tornando a integração invisível para o ecossistema alvo.
 
 ```bash
-# Execução padrão (Usa o secrets.yml local)
-# A senha mestra usa input invisível e cache de sessão seguro por 15 minutos.
-python -m reliquary.cli -- python examples/app_alvo.py
+# Python (Exemplo nativo e uv)
+python -m reliquary.cli -- python script.py
+python -m reliquary.cli -- uv run script.py
 
+# Node.js / NPM
+python -m reliquary.cli -- npm run dev
+
+### Parâmetros
+
+```bash
 # Especificando um manifesto YAML customizado e um banco específico
-python -m reliquary.cli --secrets-file ./outro/secrets.yml --db-path ./custom_registry.db -- python examples/app_alvo.py
-
+python -m reliquary.cli --secrets-file ./outro/secrets.yml --db-path ./custom_registry.db -- npm start
 ```
 
 ---
