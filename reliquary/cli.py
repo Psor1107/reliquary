@@ -4,12 +4,8 @@ from __future__ import annotations
 
 import argparse
 import getpass
-import json
-import os
 import sys
-import time
 from pathlib import Path
-from typing import Any
 
 from reliquary.contract import (
     DEFAULT_SECRETS_FILENAME,
@@ -27,65 +23,7 @@ from reliquary.vault import (
     VaultNotInitializedError,
 )
 from reliquary.database import SQLiteStorage
-
-
-# Session cache configuration
-SESSION_DIR: Path = Path.home() / ".reliquary"
-SESSION_FILE: Path = SESSION_DIR / ".session"
-SESSION_TTL: int = 900  # 15 minutes
-
-
-def _ensure_session_dir() -> None:
-    SESSION_DIR.mkdir(parents=True, exist_ok=True)
-    try:
-        os.chmod(SESSION_DIR, 0o700)
-    except Exception:
-        # Best-effort: chmod may not be supported on some platforms
-        pass
-
-
-def _read_session() -> str | None:
-    try:
-        if not SESSION_FILE.is_file():
-            return None
-        with SESSION_FILE.open("r", encoding="utf-8") as fh:
-            data: Any = json.load(fh)
-        expires_at = float(data.get("expires_at", 0))
-        if expires_at > time.time():
-            pw = data.get("password")
-            if isinstance(pw, str) and pw:
-                return pw
-        # expired or invalid
-        try:
-            SESSION_FILE.unlink()
-        except Exception:
-            pass
-    except Exception:
-        # On any error, return no session
-        return None
-    return None
-
-
-def _write_session(password: str, ttl: int = SESSION_TTL) -> None:
-    _ensure_session_dir()
-    data = {"password": password, "expires_at": time.time() + float(ttl)}
-    tmp = SESSION_DIR / (SESSION_FILE.name + ".tmp")
-    try:
-        with tmp.open("w", encoding="utf-8") as fh:
-            json.dump(data, fh)
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.replace(tmp, SESSION_FILE)
-        try:
-            os.chmod(SESSION_FILE, 0o600)
-        except Exception:
-            pass
-    finally:
-        try:
-            if tmp.exists():
-                tmp.unlink()
-        except Exception:
-            pass
+from reliquary.session import load_session, save_session
 
 
 def unlock_vault(master_password: str, db_path: Path | None = None, remote_url: str | None = None) -> Vault:
@@ -183,7 +121,7 @@ def main(argv: list[str] | None = None) -> int:
         if getattr(args, "password", None):
             password = args.password
         else:
-            password = _read_session()
+            password = load_session()
 
         if not password:
             try:
@@ -194,17 +132,18 @@ def main(argv: list[str] | None = None) -> int:
 
         vault = unlock_vault(password, args.db_path, args.remote_url)
 
-        # On successful unlock, cache the password for a short TTL for DX
+        # On successful unlock, cache the password in RAM for a short TTL
         try:
-            _write_session(password, ttl=SESSION_TTL)
+            save_session(password)
         except Exception:
-            # Best-effort: do not block execution if session caching fails
+            # Best-effort: do not block execution if shared_memory is disabled on the OS
             pass
 
         injected = resolve_env_from_vault(vault, mapping)
         env = build_merged_environ(injected)
         vault.lock()
         return run_target_command(command, env)
+        
     except InvalidMasterPasswordError:
         print("Error: invalid master password.", file=sys.stderr)
         return 1
