@@ -1,4 +1,4 @@
-name: Reliquary CLI Integration Demo
+name: Reliquary Integration Tests
 
 on:
   push:
@@ -9,6 +9,10 @@ on:
 jobs:
   test-injection:
     runs-on: ubuntu-latest
+
+    env:
+      MASTER_PASSWORD: ${{ secrets.MASTER_PASSWORD }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -16,17 +20,22 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.12"
 
       - name: Install Reliquary
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Fabricar Banco de Dados Efêmero (Seed Data)
-        run: python .github/scripts/seed_ci.py
-
-      - name: Run Target App with Reliquary Injection
-        # A flag --secrets-file garante que ele leia o YAML correto na pasta examples/
+      - name: Create ephemeral test vault
         run: |
-          python -m reliquary.cli --db-path ci_dummy.db --password "senha_falsa_de_ci" --secrets-file examples/secrets.yml -- python examples/app_alvo.py
+          python .github/scripts/seed_ci.py
+
+      - name: Run target application through Reliquary
+        run: |
+          python -m reliquary.cli \
+            --db-path ci_dummy.db \
+            --password "$MASTER_PASSWORD" \
+            --secrets-file examples/secrets.yml \
+            -- \
+            python examples/app_alvo.py

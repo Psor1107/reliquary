@@ -1,6 +1,7 @@
 """Script auxiliar para gerar o banco de dados efêmero no GitHub Actions."""
 
 import sys
+import os
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
@@ -22,7 +23,8 @@ def main() -> None:
     vault = Vault(storage=storage)
     
     # Cria o cofre com a senha fixa da esteira
-    vault.create_vault("senha_falsa_de_ci")
+    master_password = os.environ["MASTER_PASSWORD"]
+    vault.create_vault(master_password)
     
     # Insere os exatos caminhos que o manifesto secrets.yml espera
     vault.add_secret("dev/api_key", "ci-test-token-123")
