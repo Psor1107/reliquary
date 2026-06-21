@@ -1,108 +1,127 @@
-# Reliquary 🗝️
+# 🛡️ Reliquary
 
-Um Registry de Segredos local e remoto focado em **Segurança (Safe)** e **Developer Experience (Smooth)**. 
+Reliquary é um injetor de segredos agnóstico e um gerenciador de cofres locais. Ele atua como uma ponte segura entre os seus segredos (criptografados *at-rest*) e as suas aplicações ou pipelines de CI/CD.
 
-O Reliquary resolve o problema do vazamento constante de senhas, chaves de API e tokens em arquivos `.env` ou históricos de shell. Ele unifica o armazenamento criptografado em repouso num único cofre (SQLite) e permite que essas credenciais sejam consumidas dinamicamente sob demanda por ferramentas de automação (como `uv`, `npm` ou `Ansible`), sem deixá-las expostas em texto plano no disco.
+Em vez de espalhar arquivos `.env` em texto plano pelas máquinas da equipe, o Reliquary centraliza as credenciais em um banco de dados local (ou remoto) e as injeta diretamente na memória (`os.environ`) dos processos filhos durante a execução, orientado por um contrato YAML.
 
----
-
-## 🏗️ Arquitetura e Decisões de Design
-
-O projeto foi construído respeitando a separação de responsabilidades e o Princípio de Inversão de Dependências (SOLID), isolando completamente as interfaces, o motor criptográfico e o armazenamento. O banco de dados opera sob uma interface via `Protocol`, permitindo plugar repositórios locais ou remotos sem alterar o núcleo de segurança.
-
-```text
-reliquary/
-├── app.py          # View: Interface Gráfica desktop rica (CustomTkinter)
-├── vault.py        # Controller: Orquestração de negócio e controle de sessão em RAM
-├── crypto.py       # Lógica: Implementação estrita de KDF (Argon2id) e AEAD (Fernet/AES)
-├── database.py     # Local Storage: Camada de persistência (SQLite puro)
-├── remote.py       # Remote Storage: Cliente HTTP para consumo de API externa
-├── storage.py      # Interface: Contrato de armazenamento (Dependency Inversion)
-├── contract.py     # Manifesto: Parsing e validação estrita de contratos YAML
-├── launcher.py     # Executor: Isolamento de memória e spawn de subprocessos
-└── cli.py          # Maestro: Ponto de entrada oficial e orquestração do CLI
-server.py           # Entrypoint: API FastAPI para o modo distribuído
-```
-
-### O Modelo de Ameaças (Segurança e Zero-Knowledge)
-
-Para garantir a máxima proteção local e remota:
-
-1. **Derivação de Chave Resistente a Hardware:** A Master Password do usuário NUNCA é armazenada. Utilizamos **Argon2id** (`argon2-cffi`) combinado com um *Salt* único de 16 bytes.
-2. **Criptografia Autenticada (AEAD):** Padrão **Fernet** (AES-128-CBC acoplado a um HMAC-SHA256).
-3. **Criptografia Ponta-a-Ponta (E2EE):** No modo Servidor Remoto, a API atua como *Zero-Knowledge*. O servidor armazena e trafega apenas o *ciphertext* em Base64. A chave de sessão e o texto plano nunca saem da memória RAM do cliente.
+## 📦 Features Principais
+* **Injeção Agnóstica:** Funciona com Node.js, Python, automações Bash/Batch ou qualquer processo do Sistema Operacional. Sem plugins, sem SDKs amarrados ao código.
+* **Storage Abstraído:** Arquitetura orientada a interfaces. O cofre pode ser um SQLite local ou um servidor remoto consumido via API.
+* **Client-Side Encryption:** Criptografia simétrica robusta local; a *Master Password* nunca é enviada ao servidor remoto e nunca é armazenada junto com os dados.
+* **Sessões Locais (Host-Bound):** Cache efêmero atrelado à máquina para uma *Developer Experience* (DX) fluida, mitigando a exposição passiva de credenciais em disco.
 
 ---
 
-## 🚀 Como Executar
+## 🚀 Quickstart & Guia de Uso
 
-**Requisitos:** Python 3.10+
-
-### Instalação e Configuração
-
+### 1. Instalação
+Clone o repositório e instale as dependências:
 ```bash
-# 1. Clone o repositório e acesse a pasta do projeto
-cd visio
-
-# 2. Crie e ative um ambiente virtual isolado
-python -m venv .venv
-source .venv/bin/activate  # No Windows: .venv\Scripts\activate
-
-# 3. Instale as dependências
+git clone https://github.com/Psor1107/reliquary
+cd reliquary
 pip install -r requirements.txt
+
 ```
 
-### Interface de Gestão (GUI Desktop)
+### 2. Inicializando o Cofre (GUI)
 
-Para a gestão diária local:
+Para interagir com o cofre visualmente, criar sua *Master Password* e cadastrar chaves, inicie o aplicativo desktop:
 
 ```bash
 python -m reliquary
+
 ```
 
----
+*Caso queria utilizar os exemplos:* Crie as chaves `dev/api_key`, `dev/db_mock` e `prod/db_pass` para testar os scripts pré-configurados.
 
-## 🌐 Modo Servidor (Distribuído)
+### 3. O Contrato (secrets.yml)
 
-O Reliquary pode operar em rede para o compartilhamento seguro de segredos entre uma equipe.
+O Reliquary utiliza um arquivo YAML no repositório do seu projeto para mapear o que a aplicação espera versus onde o segredo está no cofre. Veja o arquivo em `examples/demo_secrets.yml`:
 
-**1. Subindo a API (Servidor):**
+```yaml
+env:
+  API_KEY: "dev/api_key"
+  DB_MOCK_URL: "dev/db_mock"
+  PROD_DB_PASSWORD: "prod/db_pass"
 
-```bash
-# Inicia o servidor FastAPI na porta 8000
-uvicorn server:app --port 8000
 ```
 
-**2. Consumindo via Cliente Remoto:**
+### 4. Demonstração: O Injetor Universal
+
+A pasta `examples/` contém três serviços simulados em linguagens diferentes consumindo o mesmo contrato YAML. O Reliquary envelopa a execução deles:
+
+**Testando um Backend (Python):**
 
 ```bash
-python -m reliquary.cli --remote-url http://localhost:8000 -- python examples/app_alvo.py
+python -m reliquary.cli --secrets-file examples/demo_secrets.yml -- python examples/backend_service.py
 
-# Bateria completa de testes automatizados E2E contra a API remota
+```
+
+**Testando um Frontend (Node.js):**
+
+```bash
+python -m reliquary.cli --secrets-file examples/demo_secrets.yml -- node examples/frontend_service.js
+
+```
+
+**Testando Automação/Infra (Batch):**
+
+```bash
+python -m reliquary.cli --secrets-file examples/demo_secrets.yml -- examples\deploy_infra.bat
+
+```
+
+*(Nota: Graças ao cache de sessão, você só precisará digitar a senha na primeira execução).*
+
+### 5. Modo API Remota (Servidor de Segredos)
+
+O Reliquary pode atuar como um provedor de segredos em rede. Para iniciar o servidor e rodar a suíte de testes de integração E2E:
+
+```bash
+# Terminal 1 (Inicia o Servidor)
+uvicorn server:app --port 8000   
+
+# Terminal 2 (Roda a bateria de testes remotos)
 python -m examples.test_remote
 ```
 
----
-
-## 🔌 Consumidores e Integrações (Injetor Agnóstico)
-
-O `launcher.py` é agnóstico à linguagem do processo filho. Ele envolve qualquer ferramenta de automação com uma bolha isolada de variáveis, tornando a integração invisível para o ecossistema alvo.
+Para usar o servidor remoto no CLI, inclua `--remote-url`:
 
 ```bash
-# Python (Exemplo nativo e uv)
-python -m reliquary.cli -- python script.py
-python -m reliquary.cli -- uv run script.py
-
-# Node.js / NPM
-python -m reliquary.cli -- npm run dev
-
-### Parâmetros
-
-```bash
-# Especificando um manifesto YAML customizado e um banco específico
-python -m reliquary.cli --secrets-file ./outro/secrets.yml --db-path ./custom_registry.db -- npm start
+python -m reliquary.cli --remote-url http://localhost:8000 --secrets-file examples/demo_secrets.yml -- python examples/app_alvo.py
 ```
 
 ---
 
-*Desenvolvido para o Desafio Técnico de Infraestrutura - Visio.IA.*
+## 🧠 Arquitetura e Modelo de Ameaças
+
+O design do Reliquary foi pautado no equilíbrio entre segurança rigorosa e fluidez de uso no dia a dia do desenvolvedor (DX).
+
+### 1. Injeção a nível de OS (Agnosticismo)
+
+Para evitar o acoplamento de bibliotecas (como o `dotenv` faz), o módulo `launcher.py` utiliza o módulo `subprocess` do Python. Ele avalia o contrato YAML, descriptografa os segredos em tempo real e orquestra o *spawn* do processo alvo (seja ele o `npm`, `uv` ou scripts de automação). Os segredos são disponibilizados apenas ao processo filho através de variáveis de ambiente durante sua execução.
+
+### 2. Inversão de Dependência (Storage)
+
+O núcleo de regras de negócios (`vault.py`) não possui conhecimento de como os dados são salvos. O protocolo abstrato em `storage.py` permite que o cofre alterne nativamente entre salvar no disco via `SQLiteStorage` (`database.py`) ou consultar a rede via `RemoteAPIStorage` (`remote.py`).
+
+### 3. Criptografia Master Password-Based
+Os dados persistentes (registry.db) são protegidos pelo protocolo Fernet. A chave criptográfica é derivada dinamicamente através do algoritmo **Argon2id** (configurado com custo de memória e paralelismo para dificultar ataques locais de dicionário/força-bruta). A *Master Password* não é armazenada; o desbloqueio do banco é validado por um *Verifier* em HMAC.
+
+### 4. Gestão de Sessão (Host-Bound Cache)
+Para evitar que o desenvolvedor digite a senha a cada comando no terminal, foi implementado um cache em `.session`. 
+Para mitigar a vulnerabilidade de senhas armazenadas em texto plano (cenário de abandono ou *hard-shutdowns*), a sessão é **criptografada com uma chave derivada localmente de atributos da máquina** (MAC Address + User ID). Se o arquivo for acidentalmente exposto ou movido para outro hardware, a decodificação falha instantaneamente. O arquivo possui validação de TTL passivo de 15 minutos e é destruído na leitura se estiver expirado.
+
+### 5. Pipelines Efêmeros (CI/CD)
+
+O Reliquary foi desenhado para atuar em automações sem interação humana. Na pasta `.github/workflows`, a *action* de CI demonstra a integração de uma variável do *GitHub Secrets* para popular e consumir o banco SQLite (`seed_ci.py`), provando a viabilidade do fluxo em ambientes descartáveis.
+
+---
+
+## 🏗️ Evoluções e Decisões de Escopo
+
+Dadas as restrições de tempo, as seguintes escolhas de escopo e *trade-offs* norteiam as futuras evoluções:
+
+1. **API Remota e Autenticação:** A comunicação atual com o `server.py` adota uma premissa de *Trust Zone* (rede local segura). Para um ambiente de produção em nuvem, a adição de autenticação via mTLS ou middlewares com JWT é fundamental antes de servir o blob criptografado.
+2. **Testes Unitários:** A prioridade atual foi validar as pontas da arquitetura com testes de integração (`test_remote.py` e validação do cache local). A próxima etapa de maturidade exigiria uma suíte formal via `pytest` utilizando mocks para I/O e *subprocess*.
+3. **Distribuição do Pacote:** O Injetor atual opera via execução de módulo do Python (`python -m reliquary.cli`). Empacotar o projeto utilizando `uv` ou `Poetry` com entrypoints nativos (permitindo comandos globais diretos como `reliquary run -- npm start`) poliria a experiência final de distribuição.

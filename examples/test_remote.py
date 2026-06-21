@@ -7,7 +7,7 @@ in a finally block.
 
 Usage: run the FastAPI server (see README) and then:
 
-    python examples/test_remote_robust.py
+    python examples/test_remote.py
 
 """
 
